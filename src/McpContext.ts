@@ -45,6 +45,8 @@ export interface TextSnapshot {
 interface McpContextOptions {
   // Whether the DevTools windows are exposed as pages for debugging of DevTools.
   experimentalDevToolsDebugging: boolean;
+  // Whether all page-like targets are exposed as pages.
+  experimentalIncludeAllPages?: boolean;
 }
 
 const DEFAULT_TIMEOUT = 5_000;
@@ -86,7 +88,7 @@ export class McpContext implements Context {
   // The most recent page state.
   #pages: Page[] = [];
   #pageToDevToolsPage = new Map<Page, Page>();
-  #selectedPageIdx = 0;
+  #selectedPage?: Page;
   // The most recent snapshot.
   #textSnapshot: TextSnapshot | null = null;
   #networkCollector: NetworkCollector;
@@ -114,29 +116,36 @@ export class McpContext implements Context {
     this.#locatorClass = locatorClass;
     this.#options = options;
 
-    this.#networkCollector = new NetworkCollector(this.browser);
+    this.#networkCollector = new NetworkCollector(
+      this.browser,
+      undefined,
+      this.#options.experimentalIncludeAllPages,
+    );
 
-    this.#consoleCollector = new PageCollector(this.browser, collect => {
-      return {
-        console: event => {
-          collect(event);
-        },
-        pageerror: event => {
-          if (event instanceof Error) {
+    this.#consoleCollector = new PageCollector(
+      this.browser,
+      collect => {
+        return {
+          console: event => {
             collect(event);
-          } else {
-            const error = new Error(`${event}`);
-            error.stack = undefined;
-            collect(error);
-          }
-        },
-      } as ListenerMap;
-    });
+          },
+          pageerror: event => {
+            if (event instanceof Error) {
+              collect(event);
+            } else {
+              const error = new Error(`${event}`);
+              error.stack = undefined;
+              collect(error);
+            }
+          },
+        } as ListenerMap;
+      },
+      this.#options.experimentalIncludeAllPages,
+    );
   }
 
   async #init() {
     await this.createPagesSnapshot();
-    this.setSelectedPageIdx(0);
     await this.#networkCollector.init();
     await this.#consoleCollector.init();
   }
@@ -211,8 +220,8 @@ export class McpContext implements Context {
 
   async newPage(): Promise<Page> {
     const page = await this.browser.newPage();
-    const pages = await this.createPagesSnapshot();
-    this.setSelectedPageIdx(pages.indexOf(page));
+    await this.createPagesSnapshot();
+    this.selectPage(page);
     this.#networkCollector.addPage(page);
     this.#consoleCollector.addPage(page);
     return page;
@@ -222,7 +231,6 @@ export class McpContext implements Context {
       throw new Error(CLOSE_PAGE_ERROR);
     }
     const page = this.getPageByIdx(pageIdx);
-    this.setSelectedPageIdx(0);
     await page.close({runBeforeUnload: false});
   }
 
@@ -273,7 +281,7 @@ export class McpContext implements Context {
   }
 
   getSelectedPage(): Page {
-    const page = this.#pages[this.#selectedPageIdx];
+    const page = this.#selectedPage;
     if (!page) {
       throw new Error('No page selected');
     }
@@ -294,19 +302,20 @@ export class McpContext implements Context {
     return page;
   }
 
-  getSelectedPageIdx(): number {
-    return this.#selectedPageIdx;
-  }
-
   #dialogHandler = (dialog: Dialog): void => {
     this.#dialog = dialog;
   };
 
-  setSelectedPageIdx(idx: number): void {
-    const oldPage = this.getSelectedPage();
-    oldPage.off('dialog', this.#dialogHandler);
-    this.#selectedPageIdx = idx;
-    const newPage = this.getSelectedPage();
+  isPageSelected(page: Page): boolean {
+    return this.#selectedPage === page;
+  }
+
+  selectPage(newPage: Page): void {
+    const oldPage = this.#selectedPage;
+    if (oldPage) {
+      oldPage.off('dialog', this.#dialogHandler);
+    }
+    this.#selectedPage = newPage;
     newPage.on('dialog', this.#dialogHandler);
     this.#updateSelectedPageTimeouts();
   }
@@ -364,7 +373,9 @@ export class McpContext implements Context {
    * Creates a snapshot of the pages.
    */
   async createPagesSnapshot(): Promise<Page[]> {
-    const allPages = await this.browser.pages();
+    const allPages = await this.browser.pages(
+      this.#options.experimentalIncludeAllPages,
+    );
 
     this.#pages = allPages.filter(page => {
       // If we allow debugging DevTools windows, return all pages.
@@ -375,6 +386,10 @@ export class McpContext implements Context {
       );
     });
 
+    if (!this.#selectedPage || this.#pages.indexOf(this.#selectedPage) === -1) {
+      this.selectPage(this.#pages[0]);
+    }
+
     await this.detectOpenDevToolsWindows();
 
     return this.#pages;
@@ -382,7 +397,9 @@ export class McpContext implements Context {
 
   async detectOpenDevToolsWindows() {
     this.logger('Detecting open DevTools windows');
-    const pages = await this.browser.pages();
+    const pages = await this.browser.pages(
+      this.#options.experimentalIncludeAllPages,
+    );
     this.#pageToDevToolsPage = new Map<Page, Page>();
     for (const devToolsPage of pages) {
       if (devToolsPage.url().startsWith('devtools://')) {

@@ -134,6 +134,12 @@ export const cliOptions = {
     describe: 'Whether to enable automation over DevTools targets',
     hidden: true,
   },
+  experimentalIncludeAllPages: {
+    type: 'boolean',
+    describe:
+      'Whether to include all kinds of pages such as webviews or background pages as pages.',
+    hidden: true,
+  },
   chromeArg: {
     type: 'array',
     describe:
@@ -142,17 +148,17 @@ export const cliOptions = {
   categoryEmulation: {
     type: 'boolean',
     default: true,
-    describe: 'Set to false to exlcude tools related to emulation.',
+    describe: 'Set to false to exclude tools related to emulation.',
   },
   categoryPerformance: {
     type: 'boolean',
     default: true,
-    describe: 'Set to false to exlcude tools related to performance.',
+    describe: 'Set to false to exclude tools related to performance.',
   },
   categoryNetwork: {
     type: 'boolean',
     default: true,
-    describe: 'Set to false to exlcude tools related to network.',
+    describe: 'Set to false to exclude tools related to network.',
   },
 } satisfies Record<string, YargsOptions>;
 

@@ -33,7 +33,7 @@ import type {ToolDefinition} from './tools/ToolDefinition.js';
 
 // If moved update release-please config
 // x-release-please-start-version
-const VERSION = '0.9.0';
+const VERSION = '0.10.1';
 // x-release-please-end
 
 export const args = parseArguments(VERSION);
@@ -83,6 +83,7 @@ async function getContext(): Promise<McpContext> {
   if (context?.browser !== browser) {
     context = await McpContext.from(browser, logger, {
       experimentalDevToolsDebugging: devtools,
+      experimentalIncludeAllPages: args.experimentalIncludeAllPages,
     });
   }
   return context;

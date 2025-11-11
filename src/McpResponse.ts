@@ -3,9 +3,7 @@
  * Copyright 2025 Google LLC
  * SPDX-License-Identifier: Apache-2.0
  */
-import {
-  AggregatedIssue, Marked, MarkdownIssueDescription
-} from '../node_modules/chrome-devtools-frontend/mcp/mcp.js';
+import { Issue } from '../node_modules/chrome-devtools-frontend/mcp/mcp.js';
 
 import type {ConsoleMessageData} from './formatters/consoleFormatter.js';
 import {
@@ -274,10 +272,7 @@ export class McpResponse implements Response {
           if ('type' in message) {
             return normalizedTypes.has(message.type());
           }
-          if (message instanceof AggregatedIssue) {
-            return normalizedTypes.has('issue');
-          }
-          return normalizedTypes.has('error');
+          return normalizedTypes.has('error'); // TODO add filtering
         });
       }
 
@@ -303,27 +298,16 @@ export class McpResponse implements Response {
               ),
             };
           }
-          if (item instanceof AggregatedIssue) {
-            const count = item.getAggregatedIssuesCount();
-            const filename = item.getDescription()?.file;
-            const rawMarkdown = filename
-              ? getIssueDescription(filename)
+          if (item instanceof Issue.Issue) {
+            const descriptionFile = item.getDescription()?.file;
+            const description = descriptionFile
+              ? getIssueDescription(descriptionFile)
               : null;
-            if (!rawMarkdown) {
             return {
               consoleMessageStableId,
               type: 'issue',
-              message: `${item.code()} (count: ${count})`,
-              args: [],
-            };
-            }
-            const markdownAst = Marked.Marked.lexer(rawMarkdown);
-            const title = MarkdownIssueDescription.findTitleFromMarkdownAst(markdownAst);
-            return {
-              consoleMessageStableId,
-              type: 'issue',
-              message: `${title} (count: ${count})`,
-              args: [],
+              message: item.primaryKey(),
+              args: description ? [description] : [],
             };
           }
           return {
